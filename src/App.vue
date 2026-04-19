@@ -1,17 +1,36 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { useI18n } from "vue-i18n";
 
-const sessions = ref<string[]>([]);
+interface AudioSession {
+  name: string;
+  icon: string | null;
+}
+
+const { t, locale } = useI18n();
+const isDark = ref(true);
+const sessions = ref<AudioSession[]>([]);
 const selectedProcess = ref<string | null>(null);
 const isActive = ref(false);
 const autostartEnabled = ref(false);
 const loading = ref(false);
+const duckPercent = ref(20);
+
+function toggleTheme() {
+  isDark.value = !isDark.value;
+  localStorage.setItem("theme", isDark.value ? "dark" : "light");
+}
+
+function toggleLang() {
+  locale.value = locale.value === "tr" ? "en" : "tr";
+  localStorage.setItem("lang", locale.value);
+}
 
 async function refreshSessions() {
   loading.value = true;
   try {
-    sessions.value = await invoke<string[]>("get_audio_sessions");
+    sessions.value = await invoke<AudioSession[]>("get_audio_sessions");
   } finally {
     loading.value = false;
   }
@@ -26,6 +45,10 @@ async function toggleDucking() {
   isActive.value = await invoke<boolean>("toggle_ducking");
 }
 
+async function saveDuckVolume() {
+  await invoke("set_duck_volume", { percent: duckPercent.value });
+}
+
 async function toggleAutostart() {
   const next = !autostartEnabled.value;
   await invoke("set_autostart_enabled", { enabled: next });
@@ -33,68 +56,101 @@ async function toggleAutostart() {
 }
 
 onMounted(async () => {
+  isDark.value = localStorage.getItem("theme") !== "light";
+  const savedLang = localStorage.getItem("lang");
+  if (savedLang === "en" || savedLang === "tr") locale.value = savedLang;
   autostartEnabled.value = await invoke<boolean>("get_autostart_enabled");
   await refreshSessions();
 });
 </script>
 
 <template>
-  <div class="app">
+  <div class="app" :class="{ light: !isDark }">
+
+    <!-- Header -->
     <header class="header">
-      <div class="logo-row">
-        <span class="logo-icon">🔊</span>
+      <div class="brand">
+        <img src="/alt-fade-720.png" class="brand-logo" alt="AltFade" />
         <div>
-          <h1 class="title">AltFade</h1>
-          <p class="subtitle">Oyun sesini otomatik kıs</p>
+          <h1 class="brand-name">AltFade</h1>
+          <p class="brand-sub">{{ t('subtitle') }}</p>
         </div>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" @click="toggleLang" title="TR / EN">
+          {{ locale === 'tr' ? 'EN' : 'TR' }}
+        </button>
+        <button class="icon-btn" @click="toggleTheme" :title="isDark ? 'Light mode' : 'Dark mode'">
+          {{ isDark ? '☀' : '🌙' }}
+        </button>
       </div>
     </header>
 
-    <section class="section">
-      <div class="section-header">
-        <span class="section-title">Aktif Ses Oturumları</span>
-        <button class="btn-icon" :disabled="loading" @click="refreshSessions" title="Yenile">
+    <!-- Sessions -->
+    <section class="card">
+      <div class="card-header">
+        <span class="card-title">{{ t('sessions') }}</span>
+        <button class="icon-btn" :disabled="loading" @click="refreshSessions">
           <span :class="{ spin: loading }">↻</span>
         </button>
       </div>
-
       <div class="session-list">
         <div v-if="sessions.length === 0" class="empty">
-          {{ loading ? "Yükleniyor…" : "Ses çıkaran uygulama bulunamadı." }}
+          {{ loading ? t('loading') : t('noSessions') }}
         </div>
         <button
           v-for="s in sessions"
-          :key="s"
+          :key="s.name"
           class="session-item"
-          :class="{ selected: selectedProcess === s }"
-          @click="selectProcess(s)"
+          :class="{ selected: selectedProcess === s.name }"
+          @click="selectProcess(s.name)"
         >
-          <span class="exe-name">{{ s }}</span>
-          <span v-if="selectedProcess === s" class="badge">Hedef</span>
+          <img v-if="s.icon" :src="s.icon" class="exe-icon" alt="" />
+          <span v-else class="exe-icon-fallback">🎮</span>
+          <span class="exe-name">{{ s.name }}</span>
+          <span v-if="selectedProcess === s.name" class="badge">{{ t('badge') }}</span>
         </button>
       </div>
     </section>
 
-    <section class="section">
-      <div class="target-info">
-        <span class="label">Seçili Hedef</span>
-        <span class="value">{{ selectedProcess ?? "—" }}</span>
+    <!-- Target + Volume -->
+    <section class="card">
+      <div class="info-row">
+        <span class="label">{{ t('target') }}</span>
+        <span class="value" :class="{ dim: !selectedProcess }">
+          {{ selectedProcess ?? t('none') }}
+        </span>
+      </div>
+      <div class="slider-row">
+        <span class="label">{{ t('duckVolume') }}</span>
+        <input
+          type="range"
+          min="5"
+          max="50"
+          step="1"
+          v-model.number="duckPercent"
+          @change="saveDuckVolume"
+          class="slider"
+        />
+        <span class="vol-badge">%{{ duckPercent }}</span>
       </div>
     </section>
 
+    <!-- Main Toggle -->
     <button
       class="toggle-btn"
       :class="{ active: isActive }"
       :disabled="!selectedProcess"
       @click="toggleDucking"
     >
-      <span class="toggle-indicator" :class="{ on: isActive }" />
-      {{ isActive ? "Servis Aktif — Durdur" : "Servisi Başlat" }}
+      <span class="dot" :class="{ on: isActive }" />
+      {{ isActive ? t('stop') : t('start') }}
     </button>
 
+    <!-- Footer -->
     <footer class="footer">
       <label class="autostart-row">
-        <span>Windows başlangıcında otomatik çalıştır</span>
+        <span>{{ t('autostart') }}</span>
         <button
           class="switch"
           :class="{ on: autostartEnabled }"
@@ -104,20 +160,39 @@ onMounted(async () => {
         />
       </label>
     </footer>
+
   </div>
 </template>
 
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { overflow: hidden; }
 
+/* ── Design tokens ────────────────────────────────── */
 :root {
+  --bg:        #0d0d14;
+  --surface:   #161622;
+  --border:    #252535;
+  --text:      #e2e2ee;
+  --text-dim:  #666680;
+  --accent:    #7c6fff;
+  --accent-hv: #9188ff;
+  --success:   #4ade80;
+  --radius:    12px;
   font-family: 'Segoe UI', system-ui, sans-serif;
   font-size: 14px;
-  background: #121218;
-  color: #e2e2e8;
 }
 
-body { overflow: hidden; }
+.app.light {
+  --bg:       #f2f2f8;
+  --surface:  #ffffff;
+  --border:   #dddde8;
+  --text:     #18182a;
+  --text-dim: #8888a0;
+  --accent:   #5b52d0;
+  --accent-hv:#4a42c0;
+  --success:  #22c55e;
+}
 </style>
 
 <style scoped>
@@ -125,142 +200,194 @@ body { overflow: hidden; }
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 20px;
-  gap: 16px;
+  padding: 18px;
+  gap: 12px;
+  background: var(--bg);
+  color: var(--text);
+  transition: background 0.2s, color 0.2s;
 }
 
 /* Header */
-.header { flex-shrink: 0; }
-.logo-row { display: flex; align-items: center; gap: 12px; }
-.logo-icon { font-size: 28px; }
-.title { font-size: 22px; font-weight: 700; color: #fff; line-height: 1.2; }
-.subtitle { font-size: 12px; color: #888; margin-top: 2px; }
-
-/* Section */
-.section {
-  background: #1c1c26;
-  border: 1px solid #2a2a38;
-  border-radius: 12px;
-  padding: 14px;
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
 }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.brand-name { font-size: 20px; font-weight: 700; color: var(--text); line-height: 1.2; }
+.brand-sub  { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
 
-.section-header {
+.header-actions { display: flex; gap: 6px; }
+
+.icon-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-dim);
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, border-color 0.15s;
+}
+.icon-btn:hover { color: var(--text); border-color: var(--accent); }
+.icon-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* Card */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  flex-shrink: 0;
+}
+.card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
 }
-.section-title { font-weight: 600; font-size: 13px; color: #aaa; text-transform: uppercase; letter-spacing: 0.05em; }
-
-.btn-icon {
-  background: none;
-  border: 1px solid #2a2a38;
-  border-radius: 6px;
-  color: #aaa;
-  width: 28px;
-  height: 28px;
-  font-size: 16px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.2s, border-color 0.2s;
+.card-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
 }
-.btn-icon:hover { color: #fff; border-color: #555; }
-.btn-icon:disabled { opacity: 0.4; cursor: default; }
-
-.spin { display: inline-block; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Session list */
-.session-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
-.session-list::-webkit-scrollbar { width: 4px; }
-.session-list::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 188px;
+  overflow-y: auto;
+}
+.session-list::-webkit-scrollbar { width: 3px; }
+.session-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-.empty { color: #555; font-size: 13px; text-align: center; padding: 20px 0; }
+.empty { color: var(--text-dim); font-size: 13px; text-align: center; padding: 16px 0; }
 
 .session-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  background: #111118;
-  border: 1px solid #2a2a38;
+  gap: 9px;
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 8px 11px;
   cursor: pointer;
-  text-align: left;
-  color: #ccc;
+  color: var(--text-dim);
   font-size: 13px;
-  transition: background 0.15s, border-color 0.15s;
+  text-align: left;
   width: 100%;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
-.session-item:hover { background: #1a1a28; border-color: #444; }
-.session-item.selected { border-color: #6c63ff; background: #1a1830; color: #fff; }
+.session-item:hover  { border-color: var(--accent); color: var(--text); }
+.session-item.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--text); }
 
-.exe-name { font-family: 'Cascadia Code', 'Consolas', monospace; }
-.badge { font-size: 11px; background: #6c63ff; color: #fff; border-radius: 4px; padding: 2px 7px; }
+.exe-icon { width: 20px; height: 20px; object-fit: contain; flex-shrink: 0; }
+.exe-icon-fallback { font-size: 17px; flex-shrink: 0; }
+.exe-name { flex: 1; font-family: 'Cascadia Code', 'Consolas', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { font-size: 10px; background: var(--accent); color: #fff; border-radius: 4px; padding: 2px 7px; flex-shrink: 0; }
 
-/* Target info */
-.target-info { display: flex; align-items: center; justify-content: space-between; }
-.label { font-size: 12px; color: #666; }
-.value { font-family: monospace; font-size: 13px; color: #a78bfa; }
+/* Info + slider */
+.info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.label { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.value { font-family: monospace; font-size: 13px; color: var(--accent); }
+.value.dim { color: var(--text-dim); }
+
+.slider {
+  flex: 1;
+  accent-color: var(--accent);
+  height: 4px;
+  cursor: pointer;
+}
+.vol-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 34px;
+  text-align: right;
+}
 
 /* Toggle button */
 .toggle-btn {
-  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
   width: 100%;
   padding: 14px;
-  border-radius: 12px;
+  border-radius: var(--radius);
   border: none;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  background: #2a2a3a;
-  color: #ccc;
-  transition: background 0.2s, color 0.2s, transform 0.1s;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  transition: background 0.2s, color 0.2s, border-color 0.2s, transform 0.1s;
+  flex-shrink: 0;
 }
-.toggle-btn:hover:not(:disabled) { background: #33334a; }
+.toggle-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
 .toggle-btn:active:not(:disabled) { transform: scale(0.98); }
-.toggle-btn.active { background: #4f46e5; color: #fff; }
-.toggle-btn.active:hover { background: #5b52f0; }
-.toggle-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.toggle-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.toggle-btn.active:hover { background: var(--accent-hv); }
+.toggle-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-.toggle-indicator {
-  width: 10px;
-  height: 10px;
+.dot {
+  width: 9px; height: 9px;
   border-radius: 50%;
-  background: #555;
-  transition: background 0.2s;
+  background: var(--text-dim);
+  transition: background 0.2s, box-shadow 0.2s;
+  flex-shrink: 0;
 }
-.toggle-indicator.on { background: #a5f3a0; box-shadow: 0 0 6px #4ade80; }
+.dot.on { background: #a5f3a0; box-shadow: 0 0 7px #4ade80; }
 
 /* Footer */
 .footer {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
   flex-shrink: 0;
-  border-top: 1px solid #1e1e2a;
-  padding-top: 12px;
 }
-
 .autostart-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-size: 13px;
-  color: #888;
+  color: var(--text-dim);
   cursor: pointer;
 }
 
 .switch {
   position: relative;
-  width: 40px;
-  height: 22px;
+  width: 40px; height: 22px;
   border-radius: 11px;
   border: none;
-  background: #333;
+  background: var(--border);
   cursor: pointer;
   flex-shrink: 0;
   transition: background 0.2s;
@@ -268,14 +395,16 @@ body { overflow: hidden; }
 .switch::after {
   content: '';
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
+  top: 3px; left: 3px;
+  width: 16px; height: 16px;
   border-radius: 50%;
-  background: #666;
+  background: var(--text-dim);
   transition: transform 0.2s, background 0.2s;
 }
-.switch.on { background: #4f46e5; }
+.switch.on { background: var(--accent); }
 .switch.on::after { transform: translateX(18px); background: #fff; }
+
+/* Animations */
+.spin { display: inline-block; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

@@ -1,0 +1,14 @@
+{
+  "subtitle": "Auto-duck game audio",
+  "sessions": "Active Audio Sessions",
+  "refresh": "Refresh",
+  "noSessions": "No active audio sessions found.",
+  "loading": "Loading…",
+  "target": "Selected Target",
+  "none": "—",
+  "start": "Start Service",
+  "stop": "Stop Service",
+  "autostart": "Launch on Windows startup",
+  "duckVolume": "Duck Volume",
+  "badge": "Target"
+}

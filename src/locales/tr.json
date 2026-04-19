@@ -1,0 +1,14 @@
+{
+  "subtitle": "Oyun sesini otomatik kıs",
+  "sessions": "Aktif Ses Oturumları",
+  "refresh": "Yenile",
+  "noSessions": "Ses çıkaran uygulama bulunamadı.",
+  "loading": "Yükleniyor…",
+  "target": "Seçili Hedef",
+  "none": "—",
+  "start": "Servisi Başlat",
+  "stop": "Servisi Durdur",
+  "autostart": "Windows başlangıcında çalıştır",
+  "duckVolume": "Kısma Seviyesi",
+  "badge": "Hedef"
+}
