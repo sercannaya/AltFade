@@ -1,11 +1,11 @@
 [package]
 name = "alt-fade"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+version = "1.0.0"
+description = "Automatically ducks game audio when media plays in the background."
+authors = ["Sercan Naya <sercannayaa@gmail.com>"]
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "MIT"
+repository = "https://github.com/sercannaya/AltFade"
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -25,6 +25,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+base64 = "0.22"
 windows = { version = "0.58", features = [
   "Win32_System_Com",
   "Win32_Foundation",
@@ -36,5 +38,9 @@ windows = { version = "0.58", features = [
   "Media_Control",
   "Foundation",
   "Foundation_Collections",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Storage_FileSystem",
 ] }
 

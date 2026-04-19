@@ -1,7 +1,10 @@
 {
-  "name": "alt-fade",
+  "name": "altfade",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "description": "Automatically ducks game audio when media plays in the background.",
+  "author": "Sercan Naya <sercannayaa@gmail.com>",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
