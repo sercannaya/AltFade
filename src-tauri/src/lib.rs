@@ -11,6 +11,7 @@ use tauri::{
 pub struct AppState {
     pub target_process: Mutex<Option<String>>,
     pub is_active: Mutex<bool>,
+    pub duck_volume: Mutex<f32>,
 }
 
 impl Default for AppState {
@@ -18,16 +19,23 @@ impl Default for AppState {
         Self {
             target_process: Mutex::new(None),
             is_active: Mutex::new(false),
+            duck_volume: Mutex::new(0.2),
         }
     }
 }
 
 #[tauri::command]
-fn get_audio_sessions() -> Vec<String> {
+fn get_audio_sessions() -> Vec<audio::AudioSession> {
     #[cfg(target_os = "windows")]
     return audio::list_sessions();
     #[cfg(not(target_os = "windows"))]
     vec![]
+}
+
+#[tauri::command]
+fn set_duck_volume(state: tauri::State<AppState>, percent: u32) {
+    let volume = (percent as f32 / 100.0).clamp(0.05, 0.9);
+    *state.duck_volume.lock().unwrap() = volume;
 }
 
 #[tauri::command]
@@ -78,14 +86,17 @@ fn start_duck_thread(app: &tauri::App) {
             if is_active {
                 let playing = audio::is_media_playing();
                 if playing && !was_ducked {
-                    audio::fade_process_volume(&target_name, 1.0, 0.2, 400, 16);
+                    let duck_vol = *state.duck_volume.lock().unwrap();
+                    audio::fade_process_volume(&target_name, 1.0, duck_vol, 400, 16);
                     was_ducked = true;
                 } else if !playing && was_ducked {
-                    audio::fade_process_volume(&target_name, 0.2, 1.0, 1500, 30);
+                    let duck_vol = *state.duck_volume.lock().unwrap();
+                    audio::fade_process_volume(&target_name, duck_vol, 1.0, 1500, 30);
                     was_ducked = false;
                 }
             } else if was_ducked {
-                audio::fade_process_volume(&target_name, 0.2, 1.0, 1000, 20);
+                let duck_vol = *state.duck_volume.lock().unwrap();
+                audio::fade_process_volume(&target_name, duck_vol, 1.0, 1000, 20);
                 was_ducked = false;
             }
         }
@@ -97,8 +108,11 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
 
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
+        .expect("tray icon not found");
+
     TrayIconBuilder::new()
-        .icon(app.default_window_icon().unwrap().clone())
+        .icon(icon)
         .tooltip("AltFade")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -129,6 +143,7 @@ pub fn run() {
             get_audio_sessions,
             set_target_process,
             toggle_ducking,
+            set_duck_volume,
             get_autostart_enabled,
             set_autostart_enabled,
         ])
