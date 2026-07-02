@@ -1,6 +1,6 @@
 [package]
 name = "alt-fade"
-version = "1.0.0"
+version = "1.1.0"
 description = "Automatically ducks game audio when media plays in the background."
 authors = ["Sercan Naya <sercannayaa@gmail.com>"]
 edition = "2021"
@@ -22,12 +22,15 @@ tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
 base64 = "0.22"
+windows-version = "0.1"
 windows = { version = "0.58", features = [
   "Win32_System_Com",
   "Win32_Foundation",
