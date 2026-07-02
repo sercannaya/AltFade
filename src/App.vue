@@ -8,6 +8,13 @@ interface AudioSession {
   icon: string | null;
 }
 
+interface Settings {
+  target: string | null;
+  duck_percent: number;
+  active: boolean;
+  lang: string;
+}
+
 const { t, locale } = useI18n();
 const isDark = ref(true);
 const sessions = ref<AudioSession[]>([]);
@@ -22,15 +29,17 @@ function toggleTheme() {
   localStorage.setItem("theme", isDark.value ? "dark" : "light");
 }
 
-function toggleLang() {
+async function toggleLang() {
   locale.value = locale.value === "tr" ? "en" : "tr";
-  localStorage.setItem("lang", locale.value);
+  await invoke("set_language", { lang: locale.value }).catch(console.error);
 }
 
 async function refreshSessions() {
   loading.value = true;
   try {
     sessions.value = await invoke<AudioSession[]>("get_audio_sessions");
+  } catch (e) {
+    console.error(e);
   } finally {
     loading.value = false;
   }
@@ -38,28 +47,47 @@ async function refreshSessions() {
 
 async function selectProcess(name: string) {
   selectedProcess.value = name;
-  await invoke("set_target_process", { name });
+  await invoke("set_target_process", { name }).catch(console.error);
 }
 
 async function toggleDucking() {
-  isActive.value = await invoke<boolean>("toggle_ducking");
+  try {
+    isActive.value = await invoke<boolean>("toggle_ducking");
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 async function saveDuckVolume() {
-  await invoke("set_duck_volume", { percent: duckPercent.value });
+  await invoke("set_duck_volume", { percent: duckPercent.value }).catch(console.error);
 }
 
 async function toggleAutostart() {
   const next = !autostartEnabled.value;
-  await invoke("set_autostart_enabled", { enabled: next });
-  autostartEnabled.value = next;
+  try {
+    await invoke("set_autostart_enabled", { enabled: next });
+    autostartEnabled.value = next;
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 onMounted(async () => {
   isDark.value = localStorage.getItem("theme") !== "light";
-  const savedLang = localStorage.getItem("lang");
-  if (savedLang === "en" || savedLang === "tr") locale.value = savedLang;
-  autostartEnabled.value = await invoke<boolean>("get_autostart_enabled");
+  try {
+    const settings = await invoke<Settings>("get_settings");
+    selectedProcess.value = settings.target;
+    duckPercent.value = settings.duck_percent;
+    isActive.value = settings.active;
+    if (settings.lang === "en" || settings.lang === "tr") locale.value = settings.lang;
+  } catch (e) {
+    console.error(e);
+  }
+  try {
+    autostartEnabled.value = await invoke<boolean>("get_autostart_enabled");
+  } catch (e) {
+    console.error(e);
+  }
   await refreshSessions();
 });
 </script>

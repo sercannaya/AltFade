@@ -38,10 +38,19 @@ pub struct AudioSession {
     pub icon: Option<String>,
 }
 
+thread_local! {
+    static COM_INITIALIZED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 fn init_com() {
-    unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-    }
+    COM_INITIALIZED.with(|initialized| {
+        if !initialized.get() {
+            unsafe {
+                let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            }
+            initialized.set(true);
+        }
+    });
 }
 
 fn get_process_name(pid: u32) -> Option<String> {
@@ -67,14 +76,15 @@ fn get_exe_path(pid: u32) -> Option<String> {
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_INFORMATION, false, pid).ok()?;
         let mut buf = [0u16; 1024];
-        let mut size = 1024u32;
-        let _ = QueryFullProcessImageNameW(
+        let mut size = buf.len() as u32;
+        let result = QueryFullProcessImageNameW(
             handle,
             PROCESS_NAME_WIN32,
             windows::core::PWSTR(buf.as_mut_ptr()),
             &mut size,
         );
         let _ = CloseHandle(handle);
+        result.ok()?;
         if size == 0 {
             return None;
         }
@@ -238,30 +248,17 @@ pub fn is_media_playing() -> bool {
     status == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing
 }
 
-pub fn fade_process_volume(target: &str, from: f32, to: f32, duration_ms: u64, steps: u32) {
-    let step_ms = (duration_ms / steps as u64).max(1);
-    let fading_up = to > from;
-    for i in 0..=steps {
-        let t = i as f32 / steps as f32;
-        let eased = if fading_up {
-            1.0 - (1.0 - t) * (1.0 - t)
-        } else {
-            t
-        };
-        let vol = (from + (to - from) * eased).clamp(0.0, 1.0);
-        set_process_volume(target, vol);
-        std::thread::sleep(std::time::Duration::from_millis(step_ms));
-    }
-}
-
-pub fn set_process_volume(target: &str, volume: f32) {
+/// Resolves the volume interfaces of every audio session belonging to the
+/// target process once, so callers don't re-enumerate on every fade step.
+fn matching_session_volumes(target: &str) -> Vec<ISimpleAudioVolume> {
     init_com();
     let Ok(manager) = session_manager() else {
-        return;
+        return vec![];
     };
+    let mut volumes = Vec::new();
     unsafe {
         let Ok(enumerator) = manager.GetSessionEnumerator() else {
-            return;
+            return volumes;
         };
         let count = enumerator.GetCount().unwrap_or(0);
         for i in 0..count {
@@ -274,13 +271,53 @@ pub fn set_process_volume(target: &str, volume: f32) {
             let Ok(pid) = ctrl2.GetProcessId() else {
                 continue;
             };
-            if let Some(name) = get_process_name(pid) {
-                if name.eq_ignore_ascii_case(target) {
-                    if let Ok(vol) = ctrl.cast::<ISimpleAudioVolume>() {
-                        let _ = vol.SetMasterVolume(volume, &GUID::zeroed());
-                    }
+            let Some(name) = get_process_name(pid) else {
+                continue;
+            };
+            if name.eq_ignore_ascii_case(target) {
+                if let Ok(vol) = ctrl.cast::<ISimpleAudioVolume>() {
+                    volumes.push(vol);
                 }
             }
         }
+    }
+    volumes
+}
+
+pub fn get_process_volume(target: &str) -> Option<f32> {
+    let volumes = matching_session_volumes(target);
+    let vol = volumes.first()?;
+    unsafe { vol.GetMasterVolume().ok() }
+}
+
+pub fn set_process_volume(target: &str, volume: f32) {
+    for vol in matching_session_volumes(target) {
+        unsafe {
+            let _ = vol.SetMasterVolume(volume, &GUID::zeroed());
+        }
+    }
+}
+
+pub fn fade_process_volume(target: &str, from: f32, to: f32, duration_ms: u64, steps: u32) {
+    let sessions = matching_session_volumes(target);
+    if sessions.is_empty() {
+        return;
+    }
+    let step_ms = (duration_ms / steps as u64).max(1);
+    let fading_up = to > from;
+    for i in 0..=steps {
+        let t = i as f32 / steps as f32;
+        let eased = if fading_up {
+            1.0 - (1.0 - t) * (1.0 - t)
+        } else {
+            t
+        };
+        let vol = (from + (to - from) * eased).clamp(0.0, 1.0);
+        for session in &sessions {
+            unsafe {
+                let _ = session.SetMasterVolume(vol, &GUID::zeroed());
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(step_ms));
     }
 }
