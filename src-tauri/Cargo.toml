@@ -1,6 +1,6 @@
 [package]
 name = "alt-fade"
-version = "1.1.0"
+version = "1.1.1"
 description = "Automatically ducks game audio when media plays in the background."
 authors = ["Sercan Naya <sercannayaa@gmail.com>"]
 edition = "2021"

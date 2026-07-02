@@ -133,10 +133,13 @@ fn get_settings(state: tauri::State<AppState>) -> Settings {
     state.settings.lock().unwrap().clone()
 }
 
+// The commands below do blocking COM/WinRT work (session enumeration, media
+// info) and are polled by the UI. They MUST be async: sync Tauri commands run
+// on the main thread and would freeze the window.
 #[tauri::command]
-fn get_status(state: tauri::State<AppState>) -> Status {
+async fn get_status(app: AppHandle) -> Status {
     Status {
-        ducked: state.ducked.lock().unwrap().is_some(),
+        ducked: app.state::<AppState>().ducked.lock().unwrap().is_some(),
         #[cfg(target_os = "windows")]
         now_playing: audio::get_now_playing(),
         #[cfg(not(target_os = "windows"))]
@@ -145,7 +148,7 @@ fn get_status(state: tauri::State<AppState>) -> Status {
 }
 
 #[tauri::command]
-fn get_audio_sessions() -> Vec<audio::AudioSession> {
+async fn get_audio_sessions() -> Vec<audio::AudioSession> {
     #[cfg(target_os = "windows")]
     return audio::list_sessions();
     #[cfg(not(target_os = "windows"))]
@@ -153,7 +156,7 @@ fn get_audio_sessions() -> Vec<audio::AudioSession> {
 }
 
 #[tauri::command]
-fn get_session_peaks() -> Vec<audio::SessionPeak> {
+async fn get_session_peaks() -> Vec<audio::SessionPeak> {
     #[cfg(target_os = "windows")]
     return audio::get_session_peaks();
     #[cfg(not(target_os = "windows"))]
@@ -161,7 +164,7 @@ fn get_session_peaks() -> Vec<audio::SessionPeak> {
 }
 
 #[tauri::command]
-fn get_media_sources() -> Vec<audio::MediaSource> {
+async fn get_media_sources() -> Vec<audio::MediaSource> {
     #[cfg(target_os = "windows")]
     return audio::list_media_sources();
     #[cfg(not(target_os = "windows"))]
