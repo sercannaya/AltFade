@@ -36,6 +36,7 @@ interface Settings {
   duck_percent: number;
   unduck_delay_ms: number;
   trigger_apps: string[];
+  ignored_sources: string[];
   hotkey_enabled: boolean;
   active: boolean;
   lang: string;
@@ -48,6 +49,7 @@ const peaks = ref<Record<string, number>>({});
 const targets = ref<string[]>([]);
 const mediaSources = ref<MediaSource[]>([]);
 const triggerApps = ref<string[]>([]);
+const ignoredSources = ref<string[]>([]);
 const isActive = ref(false);
 const isDucked = ref(false);
 const nowPlaying = ref<NowPlaying | null>(null);
@@ -117,14 +119,18 @@ interface DisplaySource {
   live: boolean;
 }
 
-// Live media sessions, plus saved triggers whose app is closed, plus
-// well-known suggestions — so chips don't vanish when an app exits.
+// Live media sessions, plus saved triggers and ignored sources whose app is
+// closed, plus well-known suggestions — so chips don't vanish when an app exits.
 const displaySources = computed<DisplaySource[]>(() => {
   const chips: DisplaySource[] = mediaSources.value.map((m) => ({ ...m, live: true }));
   const covered = (name: string) =>
     chips.some((c) => c.id.toLowerCase().includes(name.toLowerCase()));
   for (const saved of triggerApps.value) {
     if (!covered(saved)) chips.push({ id: saved, playing: false, live: false });
+  }
+  for (const ign of ignoredSources.value) {
+    if (!chips.some((c) => c.id.toLowerCase() === ign.toLowerCase()))
+      chips.push({ id: ign, playing: false, live: false });
   }
   for (const known of knownSources) {
     if (
@@ -202,6 +208,23 @@ async function toggleTrigger(id: string) {
   await invoke("set_trigger_apps", { apps: triggerApps.value }).catch(console.error);
 }
 
+function isIgnored(id: string) {
+  return ignoredSources.value.some((s) => s.toLowerCase() === id.toLowerCase());
+}
+
+// Full-id ignore list: a source marked here never triggers ducking, even with
+// an empty trigger list — so a target game that also publishes a media session
+// can't keep ducking itself.
+async function toggleIgnore(id: string) {
+  const nowIgnored = !isIgnored(id);
+  ignoredSources.value = nowIgnored
+    ? [...ignoredSources.value, id]
+    : ignoredSources.value.filter((s) => s.toLowerCase() !== id.toLowerCase());
+  await invoke("set_ignored_sources", { sources: ignoredSources.value }).catch(console.error);
+  // An ignored source shouldn't also linger as an explicit trigger.
+  if (nowIgnored && isTrigger(id)) await toggleTrigger(id);
+}
+
 async function toggleDucking() {
   try {
     isActive.value = await invoke<boolean>("toggle_ducking");
@@ -276,6 +299,7 @@ onMounted(async () => {
     duckPercent.value = settings.duck_percent;
     unduckDelay.value = settings.unduck_delay_ms;
     triggerApps.value = settings.trigger_apps;
+    ignoredSources.value = settings.ignored_sources ?? [];
     hotkeyEnabled.value = settings.hotkey_enabled;
     isActive.value = settings.active;
     if (settings.lang === "en" || settings.lang === "tr") locale.value = settings.lang;
@@ -430,16 +454,26 @@ onUnmounted(() => {
       <p class="hint">{{ t('triggersHint') }}</p>
       <div class="trigger-list">
         <div v-if="displaySources.length === 0" class="empty small">{{ t('noMedia') }}</div>
-        <button
+        <div
           v-for="m in displaySources"
           :key="m.id"
           class="trigger-item"
-          :class="{ selected: isTrigger(m.id), offline: !m.live }"
+          :class="{ selected: isTrigger(m.id) && !isIgnored(m.id), offline: !m.live, ignored: isIgnored(m.id) }"
           :title="m.id"
-          @click="toggleTrigger(m.id)"
         >
-          <span v-if="m.playing" class="trigger-play">♪</span>{{ sourceLabel(m.id) }}
-        </button>
+          <button
+            class="trigger-main"
+            :disabled="isIgnored(m.id)"
+            @click="toggleTrigger(m.id)"
+          >
+            <span v-if="m.playing" class="trigger-play">♪</span>{{ sourceLabel(m.id) }}
+          </button>
+          <button
+            class="trigger-ignore"
+            :title="isIgnored(m.id) ? t('unignore') : t('ignore')"
+            @click="toggleIgnore(m.id)"
+          >{{ isIgnored(m.id) ? '↺' : '✕' }}</button>
+        </div>
       </div>
     </section>
 
@@ -748,11 +782,24 @@ body { overflow: hidden; }
 .trigger-item {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 4px 11px;
+  max-width: 100%;
+  overflow: hidden;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s;
+}
+.trigger-item:hover { border-color: var(--accent); }
+.trigger-item.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.trigger-item.offline { border-style: dashed; }
+.trigger-item.ignored { opacity: 0.5; border-style: dashed; }
+.trigger-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  padding: 4px 4px 4px 11px;
   cursor: pointer;
   color: var(--text-dim);
   font-size: 12px;
@@ -760,11 +807,23 @@ body { overflow: hidden; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
-.trigger-item:hover { border-color: var(--accent); color: var(--text); }
-.trigger-item.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text); }
-.trigger-item.offline { border-style: dashed; }
+.trigger-main:hover:not(:disabled) { color: var(--text); }
+.trigger-item.selected .trigger-main { color: var(--text); }
+.trigger-item.ignored .trigger-main { text-decoration: line-through; cursor: default; }
+.trigger-ignore {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 4px 9px 4px 6px;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1;
+}
+.trigger-ignore:hover { color: var(--text); }
 .trigger-play { color: var(--success); font-size: 11px; }
 
 /* Info + sliders */

@@ -454,14 +454,23 @@ fn aumid_matches_process(aumid: &str, process: &str) -> bool {
 /// `trigger_apps` empty means any media source triggers; target processes
 /// never trigger their own ducking. Trigger entries match by substring so a
 /// generic name like "Spotify" covers both the desktop exe and the Store
-/// package AppUserModelId.
-pub fn is_media_playing(trigger_apps: &[String], exclude_processes: &[String]) -> bool {
+/// package AppUserModelId. `ignored_sources` holds full AppUserModelIds the
+/// user has explicitly excluded (matched case-insensitively) so a target that
+/// also publishes a media session can never keep itself ducked.
+pub fn is_media_playing(
+    trigger_apps: &[String],
+    exclude_processes: &[String],
+    ignored_sources: &[String],
+) -> bool {
     list_media_sources().iter().any(|source| {
         source.playing
             && (trigger_apps.is_empty()
                 || trigger_apps.iter().any(|t| {
                     !t.is_empty() && source.id.to_lowercase().contains(&t.to_lowercase())
                 }))
+            && !ignored_sources
+                .iter()
+                .any(|i| source.id.eq_ignore_ascii_case(i))
             && !exclude_processes
                 .iter()
                 .any(|p| aumid_matches_process(&source.id, p))
