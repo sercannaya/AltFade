@@ -265,12 +265,21 @@ fn get_autostart_enabled(app: AppHandle) -> bool {
 
 #[tauri::command]
 fn set_autostart_enabled(app: AppHandle, enabled: bool) {
-    use tauri_plugin_autostart::ManagerExt;
-    let autolaunch = app.autolaunch();
-    if enabled {
-        let _ = autolaunch.enable();
-    } else {
-        let _ = autolaunch.disable();
+    // Never register a dev/debug binary in the Run key: antivirus heuristics
+    // flag unsigned exes autostarting from build directories as suspicious.
+    #[cfg(debug_assertions)]
+    {
+        let _ = (app, enabled);
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        let autolaunch = app.autolaunch();
+        if enabled {
+            let _ = autolaunch.enable();
+        } else {
+            let _ = autolaunch.disable();
+        }
     }
 }
 
