@@ -427,7 +427,6 @@ pub fn list_media_sources() -> Vec<MediaSource> {
 
 /// Heuristic: does a media session's AppUserModelId belong to the given
 /// process? Used to keep a target game from triggering its own ducking.
-///
 /// AUMIDs come in two shapes: a packaged reverse-DNS id ("Mojang.Minecraft")
 /// or the launching executable's path ("C:\\Games\\game.exe", "...!game.exe").
 /// A plain substring test catches both when the id embeds the exe name; as a
