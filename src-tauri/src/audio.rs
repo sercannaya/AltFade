@@ -427,23 +427,49 @@ pub fn list_media_sources() -> Vec<MediaSource> {
 
 /// Heuristic: does a media session's AppUserModelId belong to the given
 /// process? Used to keep a target game from triggering its own ducking.
+/// AUMIDs come in two shapes: a packaged reverse-DNS id ("Mojang.Minecraft")
+/// or the launching executable's path ("C:\\Games\\game.exe", "...!game.exe").
+/// A plain substring test catches both when the id embeds the exe name; as a
+/// fallback we compare the id's leaf segment against the exe stem so a game run
+/// from an unusual path is still recognised. Very short stems are ignored to
+/// avoid a generic name accidentally matching an unrelated media source.
 fn aumid_matches_process(aumid: &str, process: &str) -> bool {
+    let aumid = aumid.to_lowercase();
     let process = process.to_lowercase();
     let stem = process.strip_suffix(".exe").unwrap_or(&process);
-    !stem.is_empty() && aumid.to_lowercase().contains(stem)
+    if stem.len() < 3 {
+        return false;
+    }
+    if aumid.contains(stem) {
+        return true;
+    }
+    let leaf = aumid
+        .rsplit(|c: char| matches!(c, '\\' | '/' | '!' | '.'))
+        .find(|s| !s.is_empty())
+        .unwrap_or(&aumid);
+    leaf == stem
 }
 
 /// `trigger_apps` empty means any media source triggers; target processes
 /// never trigger their own ducking. Trigger entries match by substring so a
 /// generic name like "Spotify" covers both the desktop exe and the Store
-/// package AppUserModelId.
-pub fn is_media_playing(trigger_apps: &[String], exclude_processes: &[String]) -> bool {
+/// package AppUserModelId. `ignored_sources` holds full AppUserModelIds the
+/// user has explicitly excluded (matched case-insensitively) so a target that
+/// also publishes a media session can never keep itself ducked.
+pub fn is_media_playing(
+    trigger_apps: &[String],
+    exclude_processes: &[String],
+    ignored_sources: &[String],
+) -> bool {
     list_media_sources().iter().any(|source| {
         source.playing
             && (trigger_apps.is_empty()
                 || trigger_apps.iter().any(|t| {
                     !t.is_empty() && source.id.to_lowercase().contains(&t.to_lowercase())
                 }))
+            && !ignored_sources
+                .iter()
+                .any(|i| source.id.eq_ignore_ascii_case(i))
             && !exclude_processes
                 .iter()
                 .any(|p| aumid_matches_process(&source.id, p))

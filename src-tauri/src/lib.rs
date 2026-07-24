@@ -19,6 +19,10 @@ pub struct Settings {
     pub duck_percent: u32,
     pub unduck_delay_ms: u64,
     pub trigger_apps: Vec<String>,
+    /// Media sources that must never trigger ducking, even when the trigger
+    /// list is empty. Lets a target that also registers a media session
+    /// (a game with media-key support) avoid ducking itself.
+    pub ignored_sources: Vec<String>,
     pub hotkey_enabled: bool,
     pub active: bool,
     pub lang: String,
@@ -34,6 +38,7 @@ impl Default for Settings {
             duck_percent: 20,
             unduck_delay_ms: 1500,
             trigger_apps: vec![],
+            ignored_sources: vec![],
             hotkey_enabled: true,
             active: false,
             lang: "tr".into(),
@@ -184,6 +189,12 @@ fn set_trigger_apps(app: AppHandle, state: tauri::State<AppState>, apps: Vec<Str
 }
 
 #[tauri::command]
+fn set_ignored_sources(app: AppHandle, state: tauri::State<AppState>, sources: Vec<String>) {
+    state.settings.lock().unwrap().ignored_sources = sources;
+    save_settings(&app);
+}
+
+#[tauri::command]
 fn set_duck_volume(app: AppHandle, state: tauri::State<AppState>, percent: u32) {
     state.settings.lock().unwrap().duck_percent = percent.clamp(5, 90);
     save_settings(&app);
@@ -265,12 +276,21 @@ fn get_autostart_enabled(app: AppHandle) -> bool {
 
 #[tauri::command]
 fn set_autostart_enabled(app: AppHandle, enabled: bool) {
-    use tauri_plugin_autostart::ManagerExt;
-    let autolaunch = app.autolaunch();
-    if enabled {
-        let _ = autolaunch.enable();
-    } else {
-        let _ = autolaunch.disable();
+    // Never register a dev/debug binary in the Run key: antivirus heuristics
+    // flag unsigned exes autostarting from build directories as suspicious.
+    #[cfg(debug_assertions)]
+    {
+        let _ = (app, enabled);
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        let autolaunch = app.autolaunch();
+        if enabled {
+            let _ = autolaunch.enable();
+        } else {
+            let _ = autolaunch.disable();
+        }
     }
 }
 
@@ -313,7 +333,7 @@ fn start_duck_thread(app: &tauri::App) {
             std::thread::sleep(Duration::from_millis(500));
 
             let state = handle.state::<AppState>();
-            let (active, targets, duck_vol, unduck_delay, triggers) = {
+            let (active, targets, duck_vol, unduck_delay, triggers, ignored) = {
                 let settings = state.settings.lock().unwrap();
                 (
                     settings.active,
@@ -321,6 +341,7 @@ fn start_duck_thread(app: &tauri::App) {
                     settings.duck_volume(),
                     settings.unduck_delay_ms,
                     settings.trigger_apps.clone(),
+                    settings.ignored_sources.clone(),
                 )
             };
             let ducked = state.ducked.lock().unwrap().clone();
@@ -335,7 +356,7 @@ fn start_duck_thread(app: &tauri::App) {
                 continue;
             }
 
-            let playing = audio::is_media_playing(&triggers, &targets);
+            let playing = audio::is_media_playing(&triggers, &targets, &ignored);
             if playing {
                 last_playing_at = Some(Instant::now());
             }
@@ -560,6 +581,7 @@ pub fn run() {
             get_media_sources,
             set_targets,
             set_trigger_apps,
+            set_ignored_sources,
             toggle_ducking,
             set_duck_volume,
             set_unduck_delay,
