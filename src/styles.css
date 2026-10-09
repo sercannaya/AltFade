@@ -1,0 +1,118 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { overflow: hidden; }
+
+/* ── Design tokens ────────────────────────────────── */
+:root {
+  --bg:        #0d0d14;
+  --surface:   #161622;
+  --border:    #252535;
+  --text:      #e2e2ee;
+  --text-dim:  #666680;
+  --accent:    #7c6fff;
+  --accent-hv: #9188ff;
+  --success:   #4ade80;
+  --warn:      #ffa542;
+  --radius:    12px;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+}
+
+.app.light {
+  --bg:       #f2f2f8;
+  --surface:  #ffffff;
+  --border:   #dddde8;
+  --text:     #18182a;
+  --text-dim: #8888a0;
+  --accent:   #5b52d0;
+  --accent-hv:#4a42c0;
+  --success:  #22c55e;
+  --warn:     #e8891f;
+}
+
+/* Mica: let the system backdrop show through (Windows 11 only; the flag is
+   set at runtime, older systems keep the solid background above). */
+.app.mica {
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+}
+.app.mica .card {
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+/* ── Shared building blocks ───────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  flex-shrink: 0;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.card-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.icon-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-dim);
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, border-color 0.15s;
+}
+.icon-btn:hover { color: var(--text); border-color: var(--accent); }
+.icon-btn:disabled { opacity: 0.4; cursor: default; }
+
+.empty { color: var(--text-dim); font-size: 13px; text-align: center; padding: 14px 0; }
+.empty.small { font-size: 12px; padding: 8px 0; }
+
+.label { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.switch {
+  position: relative;
+  width: 40px; height: 22px;
+  border-radius: 11px;
+  border: none;
+  background: var(--border);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform 0.2s, background 0.2s;
+}
+.switch.on { background: var(--accent); }
+.switch.on::after { transform: translateX(18px); background: #fff; }
+
+.spin { display: inline-block; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
